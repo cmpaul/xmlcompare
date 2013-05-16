@@ -1,0 +1,166 @@
+<html>
+<head>
+  <title>Local XML Comparator</title>
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min.js"></script>
+	<script src="http://ajax.googleapis.com/ajax/libs/jqueryui/1.10.3/jquery-ui.min.js"></script>
+</head>
+<body>
+	<h1>XML Comparator</h1>
+	<p>Select two XML files to compare. This comparator is order-agnostic and simply compares elements and their attributes. It will list the elements added, modified, and removed in the modified file.</p>
+	<form>
+		<label for="original">Original File</label>&nbsp;<input type="file" id="original" name="original" /><br />
+		<label for="modified">Modified File</label>&nbsp;<input type="file" id="modified" name="modified" /><br />
+		<button id="compare">Compare</button>
+	</form>
+	<div id="results"></div>
+<script type="text/javascript">
+//<![CDATA[
+
+var originalDoc, modifiedDoc;
+
+$("#original").change(function(e) {
+	var files = e.target.files;
+	var reader = new FileReader();
+	reader.onload = function() {
+		originalDoc = new DOMParser().parseFromString(this.result, "text/xml");
+	};
+	reader.readAsText(files[0]);
+});
+
+$("#modified").change(function(e) {
+	var files = e.target.files;
+	var reader = new FileReader();
+	reader.onload = function() {
+		modifiedDoc = new DOMParser().parseFromString(this.result, "text/xml");
+	};
+	reader.readAsText(files[0]);
+});
+
+var node2str = function(node) {
+	var str = "&lt;" + node.nodeName;
+
+	for (var i = 0; i < node.attributes.length; i++) {
+		var attr = node.attributes.item(i);
+		str += " " + attr.nodeName + "=\"" + attr.nodeValue + "\"";
+	}
+
+	var text = $(node).text().trim();
+	if (text) {
+		str += "&gt;" + text;
+		str += "&lt;/" + node.nodeName + "&gt;";	
+	} else {
+		str += " /&gt;";
+	}
+	return str;
+};
+
+$("#compare").button().click(function(e) {
+
+	var nodesModified = [], 
+		nodesAdded = [], 
+		nodesRemoved = [],
+		// Keys to use to find matching nodes
+		nodeKeys = [ "identifier", "id", "name", "title", "data" ]; 
+
+	if (!originalDoc || !modifiedDoc) {
+		return;
+	}
+
+	// Recursive function to compare the XML elements
+	var compare = function(origEl, modEl, reverse) {
+		
+		var i, origAttr, modAttr;
+
+		// Compare the attributes
+		// if (!reverse) {
+			for (i = 0; i < origEl.attributes.length; i++) {
+				origAttr = origEl.attributes.item(i);
+				if (origAttr && origAttr.nodeName) {
+					modAttr = modEl.attributes.getNamedItem(origAttr.nodeName);
+					if (modAttr) {
+						if (origAttr.nodeValue != modAttr.nodeValue) {
+							nodesModified.push(node2str(modEl) + "<br />changed from:<br />" + node2str(origEl));
+						}
+					} else {
+						nodesModified.push(node2str(modEl) + "<br />changed from:<br />" + node2str(origEl));
+					}
+				}
+			}
+		// }
+
+		// For every child of origEl, attempt to find that item as a child of modEl
+		$.each(origEl.childNodes, function(i, child) {
+
+			var foundNodes;
+
+			// Ignore text nodes	
+			if (child.nodeName === "#text" || child.nodeName === "#cdata-section") {
+				return true; // Continue
+			}
+			foundNodes = $(modEl).find(child.nodeName);
+			if (foundNodes.length === 0) {
+				if (reverse) {
+					nodesAdded.push(child);
+				} else {
+					nodesRemoved.push(child);
+				}
+				return true; // Continue
+			}
+			// If there's one matching node, compare it
+			if (foundNodes.length === 1) {
+				compare(child, foundNodes[0], reverse);
+				return true; // Continue
+			}
+			// If there's more than one matching node, inspect each to determine which to compare
+			$.each(foundNodes, function(ii, node) {
+				var attrIdx, attr, oAttr;
+				for (attrIdx = 0; attrIdx < node.attributes.length; attrIdx++) {
+					attr = node.attributes.item(attrIdx);
+					if (attr && attr.nodeName) {
+						if ($.inArray(attr.nodeName, nodeKeys) > -1) {
+							oAttr = child.attributes.getNamedItem(attr.nodeName);
+							if (oAttr && oAttr.nodeValue == attr.nodeValue) {
+								compare(child, node, reverse);
+								return false; // Break
+							}
+						}
+					}
+				}
+			});
+		});
+	};
+
+	// Compare the original to the modified to find items that are modified or removed
+	compare(originalDoc.documentElement, modifiedDoc.documentElement, false);
+	// Compare the reverse to find items that are added
+	compare(modifiedDoc.documentElement, originalDoc.documentElement, true);
+	
+	var results = $("#results");
+	results.empty();
+	results.append("<h2>Results</h2>");
+	results.append("<h3>Nodes Added</h3>");
+	var addedList = $("<ol></ol>");
+	results.append(addedList);
+
+	$.each(nodesAdded, function(i, added) {
+		addedList.append("<li>" + node2str(added) + "</li>");
+	});
+	results.append("<h3>Nodes Removed</h3>");
+	var remList = $("<ol></ol>");
+	results.append(remList);
+	$.each(nodesRemoved, function(i, removed) {
+		remList.append("<li>" + node2str(removed) + "</li>");
+	});
+	results.append("<h3>Nodes Modified</h3><p><em>(May include duplicates)</em>");
+	var modList = $("<ol></ol>");
+	results.append(modList);
+	$.each(nodesModified, function(i, modified) {
+		modList.append("<li>" + modified + "</li><br />");
+	});
+
+	return false;
+});
+//]]>
+</script>
+</body>
+</html>
